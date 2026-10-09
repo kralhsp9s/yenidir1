@@ -60,7 +60,20 @@ h1 span{color:#e5c57e}
 .rack-heading>div:first-child{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .avatar.human{width:32px;height:32px;color:#8de4c1}
 .rack-hints{font-size:10px;color:var(--muted);text-align:right}
-.rack{display:flex;align-items:center;gap:4px;min-height:72px;overflow-x:auto;padding:9px;border:1px solid #9a7540;border-radius:8px;background:linear-gradient(#4a3320,#261b13);scrollbar-color:#b89a53 #261b13}
+    .rack {
+  display: flex;
+  flex-direction: column; /* Sütun olarak diz */
+  flex-wrap: wrap;        /* Yere sığmayınca yana (2. satıra) geç */
+  height: 135px;          /* İki taş sığacak kadar (55px * 2 + paddingler) kesin yükseklik */
+  align-content: flex-start;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid #9a7540;
+  border-radius: 8px;
+  background: linear-gradient(#4a3320, #261b13);
+  scrollbar-color: #b89a53 #261b13;
+  overflow-x: auto;
+}
 .rack .tile{width:38px;height:55px;font-size:22px;cursor:grab;transition:transform .12s,outline .12s;touch-action:pan-x}
 .rack .tile:active{cursor:grabbing}
 .rack .tile.selected{outline:3px solid #f2c85c;transform:translateY(-7px)}
