@@ -11,7 +11,8 @@ const state = {
   selected: new Set(), hasDrawn: false, gameOver: false, busy: false,
   lastDiscard: null, nextId: 1
 };
-// --- WEB WORKER TANIMLAMASI ---
+
+// --- WEB WORKER TANIMLAMASI (Bot Yapay Zekası) ---
 const botWorkerCode = `
   function isJoker(t, okey) { return !!t && t.type==="normal" && t.color===okey.color && t.number===okey.number; }
   function value(t, okey) { return t.type==="fake" ? okey.number : t.number; }
@@ -44,15 +45,10 @@ const botWorkerCode = `
   
   function validMeld(tiles, okey){ return isValidRun(tiles, okey)||isValidGroup(tiles, okey); }
   
-  // HAFIZA/DİZİ OPTİMİZASYONU: Tüm kombinasyonları diziye atıp tarayıcıyı çökertmek yerine,
-  // sadece geçerli perleri anında (on-the-fly) buluyoruz. Bu sayede RAM şişmez.
   function meldCandidates(hand, okey) {
     const out = [];
-    
     function rec(start, chosen, k) {
-       // Sonsuz döngü güvenliği
        if(out.length > 1500) return; 
-       
        if(chosen.length === k) {
           if(validMeld(chosen, okey)) {
              out.push({tiles: [...chosen], value: chosen.reduce((s,t)=>s+value(t, okey),0)});
@@ -65,12 +61,9 @@ const botWorkerCode = `
           chosen.pop();
        }
     }
-    
-    // Botun aşırı hesap yapmasını engellemek için max 7 taşlı perlere bakıyoruz
     for(let k=3; k<=Math.min(7, hand.length); k++) {
        rec(0, [], k);
     }
-    
     return out.sort((a,b)=>b.value-a.value);
   }
   
@@ -98,7 +91,6 @@ const botWorkerCode = `
     return pairs;
   }
 
-  // Worker mesaj dinleyicisi
   self.onmessage = function(e) {
     const { hand, okey } = e.data;
     const melds = bestMelds(hand, okey);
@@ -118,24 +110,21 @@ const botWorkerCode = `
        }
     }
     
-    // Atılacak taşı belirle
     const usedIds = new Set(finalMelds.flat().map(t=>t.id));
     const remaining = hand.filter(t => !usedIds.has(t.id));
     const discardTile = remaining.length > 0 ? remaining.sort((a,b) => value(a, okey) - value(b, okey))[0] : hand[0];
     
     self.postMessage({ openType, finalMelds, discardTile });
   };
-`; // <- Tırnak hatası düzeltildi!
+`;
 
 const botWorkerBlob = new Blob([botWorkerCode], { type: 'application/javascript' });
 const botWorker = new Worker(URL.createObjectURL(botWorkerBlob));
 
-// İleride konsolda ne hata veriyor görmek istersen diye hata yakalayıcı eklendi
 botWorker.onerror = (error) => {
     console.error("Bot Worker Hatası:", error.message);
 };
 
-// Ana kanaldan worker ile iletişim kuran Promise fonksiyonu
 function getBotDecision(hand, okey) {
   return new Promise((resolve, reject) => {
     botWorker.onmessage = (e) => resolve(e.data);
@@ -144,6 +133,7 @@ function getBotDecision(hand, okey) {
   });
 }
 // --- WEB WORKER SONU ---
+
 function makeTiles() {
   const tiles = [];
   for (const color of COLORS) for (let n=1;n<=13;n++) for(let copy=0;copy<2;copy++) {
@@ -189,21 +179,18 @@ function newGame() {
   state.nextId=1; state.selected.clear(); state.opened=new Set(); state.tableMelds=[];
   state.discards=[];state.hasDrawn=false;state.gameOver=false;state.busy=false;
   let tiles=shuffle(makeTiles());
-  // Gösterge normal taş olsun.
   const ix=tiles.findIndex(t=>t.type==="normal");
   state.indicator=tiles.splice(ix,1)[0];
   state.okey={color:state.indicator.color,number:state.indicator.number===13?1:state.indicator.number+1,type:"normal"};
   const dealer=Math.floor(Math.random()*4);
   state.dealer=dealer;
   state.players=Array.from({length:4},(_,i)=>({id:i,name:i===0?"Sen":`Bot ${i}`,human:i===0,hand:[],melds:[]}));
-  // Dağıtıcı 22, diğerleri 21. İnsan oyuncunun elinde 22 varsa ilk taşı atar.
   for(let i=0;i<4;i++){
     const p=state.players[(dealer+i)%4], count=p.id===dealer?22:21;
     for(let j=0;j<count;j++)p.hand.push(tiles.pop());
   }
   state.deck=tiles;
   state.current=dealer;
-  // Ortada taş yok; atılan taş alanı tur ilerledikçe dolar.
   render();
   setMessage(`Dağıtıcı ${state.players[dealer].name}. İlk sıra onda.`);
   if(state.current!==0) scheduleBotTurn(650);
@@ -244,7 +231,6 @@ function isValidRun(tiles) {
   const nums=normals.map(t=>t.number);
   if(new Set(nums).size!==nums.length)return false;
 
-  // 1, 2, ... 13 döngüsü desteklenir; ör. 12-13-1 ve 13-1-2.
   for(let start=1;start<=13;start++){
     const sequence=Array.from({length:tiles.length},(_,i)=>((start+i-1)%13)+1);
     if(nums.every(n=>sequence.includes(n))){
@@ -262,6 +248,8 @@ function isValidGroup(tiles) {
   return normals.every(t=>t.number===n)&&new Set(normals.map(t=>t.color)).size===normals.length&&tiles.length<=4;
 }
 function validMeld(tiles){return isValidRun(tiles)||isValidGroup(tiles);}
+
+// Ana ekranda kullanıcının elini açması için gerekli fonksiyonlar
 function combos(arr,k) {
   const out=[];
   function rec(start,chosen){if(chosen.length===k){out.push([...chosen]);return;}
@@ -272,38 +260,23 @@ function meldCandidates(hand) {
   const out=[];
   for(let k=3;k<=Math.min(13,hand.length);k++) {
     for(const c of combos(hand,k)) if(validMeld(c))out.push({tiles:c,value:c.reduce((s,t)=>s+value(t),0)});
-    // Avoid combinatorial explosion in ordinary hands.
     if(out.length>1800)break;
   }
   return out.sort((a,b)=>b.value-a.value);
 }
 function bestMelds(hand) {
   const candidates=meldCandidates(hand), chosen=[], used=new Set();
-  // Greedy non-overlapping selection: quick and suitable for the first playable version.
   for(const c of candidates) if(c.tiles.every(t=>!used.has(t.id))) {
     chosen.push(c.tiles);c.tiles.forEach(t=>used.add(t.id));
   }
   return chosen;
 }
-function pairsIn(hand) {
-  const used=new Set(),pairs=[];
-  for(let i=0;i<hand.length;i++) {
-    if(used.has(hand[i].id)||hand[i].type!=="normal")continue;
-    for(let j=i+1;j<hand.length;j++){
-      const a=hand[i],b=hand[j];
-      if(!used.has(b.id)&&b.type==="normal"&&a.color===b.color&&a.number===b.number){
-        pairs.push([a,b]);used.add(a.id);used.add(b.id);break;
-      }
-    }
-  }
-  return pairs;
-}
+
 function openSelectedMelds() {
   const p=state.players[0];
   if(!state.hasDrawn){setMessage("El açmadan önce taş çekmelisin.");return;}
   const selected=p.hand.filter(t=>state.selected.has(t.id));
   if(selected.length<3){setMessage("Açmak için en az 3 taş seç.");return;}
-  // Selected melds may contain multiple groups; split with greedy candidates.
   const melds=bestMelds(selected);
   const used=melds.flat();
   if(used.length!==selected.length){setMessage("Seçili taşların tamamı geçerli perlere ayrılmıyor.");return;}
@@ -322,12 +295,7 @@ function commitOpen(player,melds,isBot) {
   state.opened.add(player.id);state.selected.clear();
   if(!isBot) {render();setMessage(`El açtın. Açılan taşların toplamı ${used.reduce((s,t)=>s+value(t),0)}.`);}
 }
-function openPairsForBot(player) {
-  const pairs=pairsIn(player.hand).slice(0,5);
-  if(pairs.length<5)return false;
-  for(const pair of pairs){player.melds.push([...pair]);state.tableMelds.push({playerId:player.id,tiles:[...pair],pair:true});}
-  const used=pairs.flat();player.hand=player.hand.filter(t=>!used.some(u=>u.id===t.id));state.opened.add(player.id);return true;
-}
+
 function processSelected() {
   if(state.current!==0||!state.hasDrawn||state.busy)return;
   if(!state.opened.has(0)){setMessage("Önce elini açmalısın.");return;}
@@ -361,11 +329,6 @@ function discardSelected() {
   render();setMessage(`${p.name} taş attı. Sıradaki: ${state.players[state.current].name}.`);
   if(state.current!==0)scheduleBotTurn(700);
 }
-function canAddToAnyTable(tile) {return state.tableMelds.some(m=>canAddToMeld(tile,m.tiles));}
-function tileUseful(tile,hand) {
-  const test=[...hand,tile];
-  return meldCandidates(test).some(c=>c.tiles.some(t=>t.id===tile.id))||canAddToAnyTable(tile);
-}
 
 async function botTurn() {
   if(state.gameOver||state.current===0)return;
@@ -373,20 +336,17 @@ async function botTurn() {
   state.busy=true;
   render();
 
-  // Botun düşünme animasyonu ve UI'ın nefes alması için kısa bekleme
   await new Promise(r => setTimeout(r, 200));
 
   const top = state.discards[state.discards.length-1];
-  
-  // Hızlı çekim mantığı: Eğer ortadaki son taş perlere işlenebiliyorsa al, yoksa desteden çek
   const needsTop = top && state.tableMelds.some(m => canAddToMeld(top, m.tiles));
+  
   if(needsTop) p.hand.push(state.discards.pop());
   else if(state.deck.length) p.hand.push(state.deck.pop());
   else if(top) p.hand.push(state.discards.pop());
   else { state.gameOver=true; state.busy=false; setMessage("Çekilecek taş kalmadı."); render(); return; }
 
   if(!state.opened.has(p.id)) {
-     // Web Worker ile ana iş parçacığını dondurmadan hesapla
      const { openType, finalMelds, discardTile } = await getBotDecision(p.hand, state.okey);
      
      if (openType === 'series') {
@@ -403,7 +363,6 @@ async function botTurn() {
         state.opened.add(p.id);
      }
 
-     // Atılacak taşı belirle
      let discard = discardTile ? p.hand.find(t=>t.id === discardTile.id) : null;
      if(!discard && p.hand.length > 0) discard = p.hand[0];
 
@@ -413,7 +372,6 @@ async function botTurn() {
         state.lastDiscard = discard;
      }
   } else {
-     // Zaten açmış bot için hızlı mantık: elindekileri tabloya işlemeyi dene
      for(let i=p.hand.length-1;i>=0;i--){
         const t=p.hand[i], m=state.tableMelds.find(x=>canAddToMeld(t,x.tiles));
         if(m){ m.tiles.push(t); p.hand.splice(i,1); }
@@ -433,16 +391,17 @@ async function botTurn() {
   if(state.current===0) setMessage("Sıra sende. Ortadan taş çek veya son atılanı yandan al.");
   else scheduleBotTurn(700);
 }
+
 function scheduleBotTurn(delay) {
   if(state.gameOver)return;
   state.busy=true;render();
   setTimeout(()=>{state.busy=false;if(state.current!==0)botTurn();},delay);
 }
+
 function sortHandRun() {
   const p=state.players[0];
   p.hand.sort((a,b)=>{
     if(a.type==="fake")return 1;if(b.type==="fake")return -1;
-    // Renklerine sonra sayılarına göre (Seri düzende)
     return a.color.localeCompare(b.color,"tr")||a.number-b.number;
   });
   renderRack();
@@ -452,15 +411,11 @@ function sortHandPair() {
   const p=state.players[0];
   p.hand.sort((a,b)=>{
     if(a.type==="fake")return 1;if(b.type==="fake")return -1;
-    // Önce sayıya sonra rengine göre (Çift perlerini yan yana getirmek için)
     return a.number-b.number||a.color.localeCompare(b.color,"tr");
   });
   renderRack();
 }
 
-// Dosyanın en alt kısımlarındaki event tanımlarını bununla değiştirin:
-$("sortRunBtn").addEventListener("click",sortHandRun);
-$("sortPairBtn").addEventListener("click",sortHandPair);
 function renderRack() {
   const rack=$("playerRack");rack.innerHTML="";
   const p=state.players[0];p.hand.forEach(t=>rack.appendChild(tileEl(t,{selectable:true})));
@@ -508,16 +463,18 @@ function render() {
   $("processBtn").disabled=state.current!==0||!state.hasDrawn||state.busy||state.gameOver||!state.opened.has(0);
   $("discardBtn").disabled=state.current!==0||!state.hasDrawn||state.busy||state.gameOver;
 }
+
+// Buton Listener'ları Hatalardan Arındırıldı
 $("drawPile").addEventListener("click",drawFromDeck);
 $("takeDiscardBtn").addEventListener("click",takeDiscard);
 $("discardBtn").addEventListener("click",discardSelected);
 $("openBtn").addEventListener("click",openSelectedMelds);
 $("processBtn").addEventListener("click",processSelected);
-$("sortBtn").addEventListener("click",sortHand);
+$("sortRunBtn").addEventListener("click",sortHandRun);
+$("sortPairBtn").addEventListener("click",sortHandPair);
 $("clearSelectionBtn").addEventListener("click",()=>{state.selected.clear();renderRack();});
 $("newGameBtn").addEventListener("click",newGame);
 
-// Expose a small API for later debugging/extensions.
 window.Okey101 = {newGame, state, isValidRun, isValidGroup, validMeld, bestMelds, value};
 newGame();
 })();

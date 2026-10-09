@@ -62,9 +62,9 @@ h1 span{color:#e5c57e}
 .rack-hints{font-size:10px;color:var(--muted);text-align:right}
     .rack {
   display: flex;
-  flex-direction: column; /* Sütun olarak diz */
-  flex-wrap: wrap;        /* Yere sığmayınca yana (2. satıra) geç */
-  height: 135px;          /* İki taş sığacak kadar (55px * 2 + paddingler) kesin yükseklik */
+  flex-direction: column; 
+  flex-wrap: wrap;       
+  height: 135px;      
   align-content: flex-start;
   gap: 4px;
   padding: 9px;
@@ -72,7 +72,7 @@ h1 span{color:#e5c57e}
   border-radius: 8px;
   background: linear-gradient(#4a3320, #261b13);
   scrollbar-color: #b89a53 #261b13;
-  overflow-x: auto;
+  overflow-x: auto
 }
 .rack .tile{width:38px;height:55px;font-size:22px;cursor:grab;transition:transform .12s,outline .12s;touch-action:pan-x}
 .rack .tile:active{cursor:grabbing}
