@@ -1,43 +1,73 @@
 
 import { useState } from "react";
+import { applyDocumentFilter } from "../lib/documentFilters";
 import { downloadPdf } from "../lib/pdfExport";
 
 export default function PdfExportPanel({ pages }) {
-  const [fileName, setFileName] = useState("belgelerim");
+  const [fileName, setFileName] = useState("taranan-belgeler");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  function handleDownload() {
+  async function handleDownload() {
+    if (!pages?.length) {
+      setError("PDF oluşturmak için önce belge eklemelisin.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+
     try {
-      setError("");
-      downloadPdf(pages, fileName);
+      const finalPages = [];
+
+      for (const page of pages) {
+        if (!page.canvas) {
+          throw new Error("Bir sayfanın görüntüsü bulunamadı.");
+        }
+
+        // Filtreyi küçük önizleme yerine tam çözünürlüklü görüntüye uygula.
+        const finalCanvas = await applyDocumentFilter(
+          page.canvas,
+          page.filter || "original",
+          { maxDimension: Math.max(page.canvas.width, page.canvas.height) }
+        );
+
+        finalPages.push({ canvas: finalCanvas });
+      }
+
+      downloadPdf(finalPages, fileName);
     } catch (err) {
+      console.error(err);
       setError(err.message || "PDF oluşturulamadı.");
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <section className="pdf-panel">
-      <label htmlFor="fileName">PDF dosya adı</label>
+    <section className="pdf-export-panel">
+      <h2>PDF oluştur</h2>
+
+      <label htmlFor="pdf-file-name">Dosya adı</label>
 
       <input
-        id="fileName"
+        id="pdf-file-name"
+        type="text"
         value={fileName}
-        onChange={(e) => setFileName(e.target.value)}
-        placeholder="Örn. ders-notlari"
-        maxLength={100}
+        onChange={(event) => setFileName(event.target.value)}
+        placeholder="taranan-belgeler"
+        disabled={busy}
       />
-
-      <p>PDF'ye eklenecek sayfa: {pages.length}</p>
-
-      {error && <p role="alert">{error}</p>}
 
       <button
         type="button"
         onClick={handleDownload}
-        disabled={pages.length === 0}
+        disabled={busy || !pages?.length}
       >
-        PDF'yi indir
+        {busy ? "PDF hazırlanıyor..." : "PDF olarak indir"}
       </button>
+
+      {error && <p role="alert">{error}</p>}
     </section>
   );
 }
