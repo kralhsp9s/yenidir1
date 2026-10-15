@@ -105,3 +105,47 @@ button:disabled {
     flex: 1;
   }
 }
+
+.crop-editor {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid #d8dee8;
+  border-radius: 14px;
+  background: white;
+}
+
+.crop-canvas-wrap {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #e8ebf0;
+}
+
+.crop-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.crop-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.crop-error {
+  color: #b42318;
+}
+
+@media (max-width: 480px) {
+  .crop-editor {
+    padding: 10px;
+  }
+
+  .crop-actions button {
+    flex: 1;
+  }
+}
