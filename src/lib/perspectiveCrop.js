@@ -1,81 +1,69 @@
 
 import { loadOpenCV } from "./opencv";
 
-export async function cropPerspective(sourceCanvas, corners) {
-  const cv = await loadOpenCV();
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
 
-  if (!corners || corners.length !== 4) {
-    throw new Error("Kırpmak için dört köşe seçmelisin.");
+export async function perspectiveCrop(sourceCanvas, corners) {
+  if (!sourceCanvas || !corners || corners.length !== 4) {
+    throw new Error("Belge görüntüsü veya dört köşe eksik.");
   }
+
+  const cv = await loadOpenCV();
 
   const [tl, tr, br, bl] = corners;
 
-  const distance = (a, b) =>
-    Math.hypot(a.x - b.x, a.y - b.y);
-
-  const width = Math.max(
-    distance(tl, tr),
-    distance(bl, br)
+  const outputWidth = Math.round(
+    Math.max(distance(tl, tr), distance(bl, br))
   );
 
-  const height = Math.max(
-    distance(tl, bl),
-    distance(tr, br)
+  const outputHeight = Math.round(
+    Math.max(distance(tl, bl), distance(tr, br))
   );
 
-  if (width < 20 || height < 20) {
-    throw new Error("Seçilen alan çok küçük.");
+  if (outputWidth < 2 || outputHeight < 2) {
+    throw new Error("Belge boyutları geçersiz.");
   }
 
-  const outputWidth = Math.round(width);
-  const outputHeight = Math.round(height);
+  const src = cv.imread(sourceCanvas);
+  const srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    tl.x, tl.y,
+    tr.x, tr.y,
+    br.x, br.y,
+    bl.x, bl.y,
+  ]);
 
-  let src;
-  let srcPoints;
-  let dstPoints;
-  let transform;
-  let output;
+  const dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
+    0, 0,
+    outputWidth - 1, 0,
+    outputWidth - 1, outputHeight - 1,
+    0, outputHeight - 1,
+  ]);
+
+  const transform = cv.getPerspectiveTransform(srcPoints, dstPoints);
+  const result = new cv.Mat();
 
   try {
-    src = cv.imread(sourceCanvas);
-
-    srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
-      tl.x, tl.y,
-      tr.x, tr.y,
-      br.x, br.y,
-      bl.x, bl.y,
-    ]);
-
-    dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
-      0, 0,
-      outputWidth - 1, 0,
-      outputWidth - 1, outputHeight - 1,
-      0, outputHeight - 1,
-    ]);
-
-    transform = cv.getPerspectiveTransform(srcPoints, dstPoints);
-    output = new cv.Mat();
-
     cv.warpPerspective(
       src,
-      output,
+      result,
       transform,
       new cv.Size(outputWidth, outputHeight),
       cv.INTER_CUBIC,
-      cv.BORDER_REPLICATE
+      cv.BORDER_CONSTANT,
+      new cv.Scalar(255, 255, 255, 255)
     );
 
-    const resultCanvas = document.createElement("canvas");
-    resultCanvas.width = outputWidth;
-    resultCanvas.height = outputHeight;
+    const outputCanvas = document.createElement("canvas");
+    cv.imshow(outputCanvas, result);
 
-    cv.imshow(resultCanvas, output);
-    return resultCanvas;
+    return outputCanvas;
   } finally {
-    if (src) src.delete();
-    if (srcPoints) srcPoints.delete();
-    if (dstPoints) dstPoints.delete();
-    if (transform) transform.delete();
-    if (output) output.delete();
+    src.delete();
+    srcPoints.delete();
+    dstPoints.delete();
+    transform.delete();
+    result.delete();
   }
 }
