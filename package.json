@@ -4,6 +4,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "start": "vite --host 0.0.0.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
