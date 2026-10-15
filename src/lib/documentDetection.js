@@ -1,133 +1,132 @@
 
 import { loadOpenCV } from "./opencv";
 
-// Köşeleri sol üst, sağ üst, sağ alt, sol alt sırasına koyar.
 function orderCorners(points) {
-  const sum = points.map((p) => p.x + p.y);
-  const diff = points.map((p) => p.x - p.y);
+  const sums = points.map((p) => p.x + p.y);
+  const diffs = points.map((p) => p.y - p.x);
 
-  const topLeft = points[sum.indexOf(Math.min(...sum))];
-  const bottomRight = points[sum.indexOf(Math.max(...sum))];
-  const topRight = points[diff.indexOf(Math.max(...diff))];
-  const bottomLeft = points[diff.indexOf(Math.min(...diff))];
-
-  return [topLeft, topRight, bottomRight, bottomLeft];
+  return [
+    points[sums.indexOf(Math.min(...sums))], // Sol üst
+    points[diffs.indexOf(Math.min(...diffs))], // Sağ üst
+    points[sums.indexOf(Math.max(...sums))], // Sağ alt
+    points[diffs.indexOf(Math.max(...diffs))], // Sol alt
+  ];
 }
 
-function distance(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-export async function detectDocument(sourceCanvas) {
+async function runDetection(image, options = {}) {
   const cv = await loadOpenCV();
 
-  const maxDimension = 1000;
-  const scale = Math.min(
-    1,
-    maxDimension / Math.max(sourceCanvas.width, sourceCanvas.height)
-  );
+  const width = image.naturalWidth || image.videoWidth || image.width;
+  const height = image.naturalHeight || image.videoHeight || image.height;
 
-  const width = Math.max(1, Math.round(sourceCanvas.width * scale));
-  const height = Math.max(1, Math.round(sourceCanvas.height * scale));
+  if (!width || !height) {
+    throw new Error("Fotoğraf henüz yüklenmedi.");
+  }
 
-  const smallCanvas = document.createElement("canvas");
-  smallCanvas.width = width;
-  smallCanvas.height = height;
+  // Büyük fotoğrafları analizden önce küçült.
+  const maxDimension = options.maxDimension || 900;
+  const scale = Math.min(1, maxDimension / Math.max(width, height));
+  const smallWidth = Math.max(1, Math.round(width * scale));
+  const smallHeight = Math.max(1, Math.round(height * scale));
 
-  const context = smallCanvas.getContext("2d");
-  context.drawImage(sourceCanvas, 0, 0, width, height);
+  const canvas = document.createElement("canvas");
+  canvas.width = smallWidth;
+  canvas.height = smallHeight;
 
-  const src = cv.imread(smallCanvas);
-  const gray = new cv.Mat();
-  const blurred = new cv.Mat();
-  const edges = new cv.Mat();
-  const dilated = new cv.Mat();
-  const hierarchy = new cv.Mat();
-  const contours = new cv.MatVector();
-  const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, 0, 0, smallWidth, smallHeight);
 
-  let bestCorners = null;
-  let bestArea = 0;
+  let src, gray, blurred, edges, contours, hierarchy;
 
   try {
+    src = cv.imread(canvas);
+    gray = new cv.Mat();
+    blurred = new cv.Mat();
+    edges = new cv.Mat();
+    contours = new cv.MatVector();
+    hierarchy = new cv.Mat();
+
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.GaussianBlur(
-      gray,
-      blurred,
-      new cv.Size(5, 5),
-      0,
-      0,
-      cv.BORDER_DEFAULT
-    );
-
+    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
     cv.Canny(blurred, edges, 50, 150);
-    cv.dilate(edges, dilated, kernel);
-
     cv.findContours(
-      dilated,
+      edges,
       contours,
       hierarchy,
       cv.RETR_LIST,
       cv.CHAIN_APPROX_SIMPLE
     );
 
-    const imageArea = width * height;
+    let bestPoints = null;
+    let bestArea = 0;
+    const imageArea = smallWidth * smallHeight;
 
+    // Büyük ve dört köşeli şekiller arasından en uygun adayı seç.
     for (let i = 0; i < contours.size(); i++) {
-      const contour = contours.get(i);
-      const perimeter = cv.arcLength(contour, true);
-      const approx = new cv.Mat();
+      let contour, approx;
 
       try {
+        contour = contours.get(i);
+        const area = Math.abs(cv.contourArea(contour));
+
+        if (area < imageArea * 0.08 || area <= bestArea) continue;
+
+        approx = new cv.Mat();
+        const perimeter = cv.arcLength(contour, true);
         cv.approxPolyDP(contour, approx, 0.02 * perimeter, true);
 
-        if (approx.rows !== 4 || !cv.isContourConvex(approx)) {
-          continue;
-        }
-
-        const area = Math.abs(cv.contourArea(approx));
-
-        if (area < imageArea * 0.08 || area <= bestArea) {
-          continue;
-        }
+        if (approx.rows !== 4 || !cv.isContourConvex(approx)) continue;
 
         const points = [];
-
         for (let j = 0; j < 4; j++) {
           points.push({
-            x: approx.data32S[j * 2] / scale,
-            y: approx.data32S[j * 2 + 1] / scale,
+            x: approx.data32S[j * 2],
+            y: approx.data32S[j * 2 + 1],
           });
         }
 
-        const ordered = orderCorners(points);
-
-        const top = distance(ordered[0], ordered[1]);
-        const bottom = distance(ordered[3], ordered[2]);
-        const left = distance(ordered[0], ordered[3]);
-        const right = distance(ordered[1], ordered[2]);
-
-        if (Math.min(top, bottom, left, right) < 20) {
-          continue;
-        }
-
+        bestPoints = orderCorners(points);
         bestArea = area;
-        bestCorners = ordered;
       } finally {
-        approx.delete();
-        contour.delete();
+        if (approx) approx.delete();
+        if (contour) contour.delete();
       }
     }
-  } finally {
-    src.delete();
-    gray.delete();
-    blurred.delete();
-    edges.delete();
-    dilated.delete();
-    hierarchy.delete();
-    contours.delete();
-    kernel.delete();
-  }
 
-  return bestCorners;
+    if (!bestPoints) {
+      return {
+        found: false,
+        corners: null,
+        message: "Belge otomatik bulunamadı. Köşeleri elle ayarlayabilirsin.",
+      };
+    }
+
+    // Küçük görüntüdeki koordinatları orijinal fotoğrafa çevir.
+    const factorX = width / smallWidth;
+    const factorY = height / smallHeight;
+
+    const corners = bestPoints.map((p) => ({
+      x: p.x * factorX,
+      y: p.y * factorY,
+    }));
+
+    return { found: true, corners };
+  } finally {
+    if (hierarchy) hierarchy.delete();
+    if (contours) contours.delete();
+    if (edges) edges.delete();
+    if (blurred) blurred.delete();
+    if (gray) gray.delete();
+    if (src) src.delete();
+  }
+}
+
+// Önceki bileşenlerle uyumluluk için iki fonksiyon adı da mevcut.
+export async function detectDocumentCorners(image, options = {}) {
+  return runDetection(image, options);
+}
+
+export async function detectDocument(sourceCanvas, options = {}) {
+  const result = await runDetection(sourceCanvas, options);
+  return result.found ? result.corners : null;
 }
