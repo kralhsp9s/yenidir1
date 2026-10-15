@@ -1,5 +1,6 @@
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import CropEditor from "./components/CropEditor";
 import PdfExportPanel from "./components/PdfExportPanel";
 import "./index.css";
 
@@ -12,13 +13,12 @@ function imageToCanvas(file) {
       const canvas = document.createElement("canvas");
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
-
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(image, 0, 0);
+      canvas.getContext("2d").drawImage(image, 0, 0);
 
       URL.revokeObjectURL(url);
+
       resolve({
-        id: `${Date.now()}-${Math.random()}`,
+        id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
         name: file.name,
         canvas,
       });
@@ -35,6 +35,7 @@ function imageToCanvas(file) {
 
 export default function App() {
   const [pages, setPages] = useState([]);
+  const [selectedPageId, setSelectedPageId] = useState(null);
   const [error, setError] = useState("");
 
   async function handleFiles(event) {
@@ -42,18 +43,26 @@ export default function App() {
     setError("");
 
     try {
-      const newPages = await Promise.all(files.map(imageToCanvas));
-      setPages((current) => [...current, ...newPages]);
+      const added = await Promise.all(files.map(imageToCanvas));
+
+      setPages((current) => [...current, ...added]);
+
+      if (added.length > 0) {
+        setSelectedPageId(added[0].id);
+      }
     } catch (err) {
       setError(err.message || "Görseller yüklenemedi.");
     }
 
-    // Aynı dosyayı tekrar seçebilmeye izin verir.
     event.target.value = "";
   }
 
   function removePage(id) {
     setPages((current) => current.filter((page) => page.id !== id));
+
+    if (selectedPageId === id) {
+      setSelectedPageId(null);
+    }
   }
 
   function movePage(index, direction) {
@@ -68,17 +77,26 @@ export default function App() {
     });
   }
 
-  useEffect(() => {
-    return () => {
-      // Sayfalar kaldırılırken ayrıca oluşturulmuş nesne URL'leri
-      // kullanıyorsan onları da temizlemelisin.
-    };
-  }, []);
+  function handleCropped(canvas) {
+    setPages((current) =>
+      current.map((page) =>
+        page.id === selectedPageId
+          ? { ...page, canvas }
+          : page
+      )
+    );
+
+    setSelectedPageId(null);
+  }
+
+  const selectedPage = pages.find(
+    (page) => page.id === selectedPageId
+  );
 
   return (
     <main className="app">
       <h1>Belge Tarayıcı</h1>
-      <p>Görsellerini seç, sırala ve PDF olarak indir.</p>
+      <p>Görsel yükle, belgeni kırp, sayfaları sırala ve PDF indir.</p>
 
       <label className="upload">
         Görsel seç
@@ -100,32 +118,51 @@ export default function App() {
               alt={`${index + 1}. sayfa`}
             />
 
-            <p>
-              {index + 1}. sayfa — {page.name}
-            </p>
+            <p>{index + 1}. sayfa — {page.name}</p>
 
             <div className="page-actions">
               <button
-                onClick={() => movePage(index, -1)}
-                disabled={index === 0}
+                type="button"
+                onClick={() => setSelectedPageId(page.id)}
               >
-                ↑ Yukarı
+                Kırp / düzenle
               </button>
 
               <button
+                type="button"
+                onClick={() => movePage(index, -1)}
+                disabled={index === 0}
+              >
+                ↑
+              </button>
+
+              <button
+                type="button"
                 onClick={() => movePage(index, 1)}
                 disabled={index === pages.length - 1}
               >
-                ↓ Aşağı
+                ↓
               </button>
 
-              <button onClick={() => removePage(page.id)}>
+              <button
+                type="button"
+                onClick={() => removePage(page.id)}
+              >
                 Sil
               </button>
             </div>
           </article>
         ))}
       </section>
+
+      {selectedPage && (
+        <CropEditor
+          key={selectedPage.id}
+          imageCanvas={selectedPage.canvas}
+          onCropped={handleCropped}
+          onCancel={() => setSelectedPageId(null)}
+        />
+      )}
 
       <PdfExportPanel pages={pages} />
     </main>
