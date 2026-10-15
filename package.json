@@ -1,15 +1,15 @@
 
 {
-  "name": "belge-tara",
+  "name": "belge-tarama",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.0.1",
   "type": "module",
-  "start": "vite --host 0.0.0.0",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
+"scripts": {
+  "dev": "vite --host 0.0.0.0",
+  "build": "vite build",
+  "preview": "vite preview",
+  "start": "vite --host 0.0.0.0"
+},
   "dependencies": {
     "jspdf": "^3.0.1",
     "react": "^19.0.0",
