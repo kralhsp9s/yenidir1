@@ -1,10 +1,17 @@
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import CropEditor from "./components/CropEditor";
+import FilterPanel from "./components/FilterPanel";
+import PageManager from "./components/PageManager";
 import PdfExportPanel from "./components/PdfExportPanel";
 import "./index.css";
 
-function imageToCanvas(file) {
+function createId() {
+  return globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function fileToCanvas(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const image = new Image();
@@ -13,20 +20,23 @@ function imageToCanvas(file) {
       const canvas = document.createElement("canvas");
       canvas.width = image.naturalWidth;
       canvas.height = image.naturalHeight;
-      canvas.getContext("2d").drawImage(image, 0, 0);
 
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        URL.revokeObjectURL(url);
+        reject(new Error("Fotoğraf açılamadı."));
+        return;
+      }
+
+      context.drawImage(image, 0, 0);
       URL.revokeObjectURL(url);
-
-      resolve({
-        id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
-        name: file.name,
-        canvas,
-      });
+      resolve(canvas);
     };
 
     image.onerror = () => {
       URL.revokeObjectURL(url);
-      reject(new Error(`${file.name} açılamadı.`));
+      reject(new Error(`${file.name} dosyası açılamadı.`));
     };
 
     image.src = url;
@@ -35,136 +45,280 @@ function imageToCanvas(file) {
 
 export default function App() {
   const [pages, setPages] = useState([]);
-  const [selectedPageId, setSelectedPageId] = useState(null);
-  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+  const [editingPageId, setEditingPageId] = useState(null);
+  const [filterPageId, setFilterPageId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const fileInputRef = useRef(null);
+
+  const selectedPage =
+    pages.find((page) => page.id === selectedId) ?? null;
 
   async function handleFiles(event) {
-    const files = Array.from(event.target.files || []);
-    setError("");
-
-    try {
-      const added = await Promise.all(files.map(imageToCanvas));
-
-      setPages((current) => [...current, ...added]);
-
-      if (added.length > 0) {
-        setSelectedPageId(added[0].id);
-      }
-    } catch (err) {
-      setError(err.message || "Görseller yüklenemedi.");
-    }
-
-    event.target.value = "";
-  }
-
-  function removePage(id) {
-    setPages((current) => current.filter((page) => page.id !== id));
-
-    if (selectedPageId === id) {
-      setSelectedPageId(null);
-    }
-  }
-
-  function movePage(index, direction) {
-    setPages((current) => {
-      const next = [...current];
-      const target = index + direction;
-
-      if (target < 0 || target >= next.length) return current;
-
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
-  }
-
-  function handleCropped(canvas) {
-    setPages((current) =>
-      current.map((page) =>
-        page.id === selectedPageId
-          ? { ...page, canvas }
-          : page
-      )
+    const files = Array.from(event.target.files ?? []).filter(
+      (file) => file.type.startsWith("image/")
     );
 
-    setSelectedPageId(null);
+    event.target.value = "";
+
+    if (files.length === 0) return;
+
+    setBusy(true);
+    setMessage("");
+
+    try {
+      const newPages = [];
+
+      for (const file of files) {
+        const canvas = await fileToCanvas(file);
+
+        newPages.push({
+          id: createId(),
+          name: file.name,
+          canvas,
+          filter: "original",
+        });
+      }
+
+      setPages((current) => [...current, ...newPages]);
+
+      if (newPages.length > 0) {
+        setSelectedId(newPages[newPages.length - 1].id);
+      }
+
+      setMessage(`${newPages.length} fotoğraf eklendi.`);
+    } catch (error) {
+      setMessage(error.message || "Fotoğraf eklenemedi.");
+    } finally {
+      setBusy(false);
+    }
   }
 
-  const selectedPage = pages.find(
-    (page) => page.id === selectedPageId
-  );
+  function updatePage(id, changes) {
+    setPages((current) =>
+      current.map((page) =>
+        page.id === id ? { ...page, ...changes } : page
+      )
+    );
+  }
+
+  function handleCrop(canvas) {
+    if (!editingPageId) return;
+
+    updatePage(editingPageId, {
+      canvas,
+      filter: "original",
+    });
+
+    setSelectedId(editingPageId);
+    setEditingPageId(null);
+    setMessage("Belge kırpıldı.");
+  }
+
+  function deletePage(id) {
+    setPages((current) => {
+      const remaining = current.filter((page) => page.id !== id);
+
+      setSelectedId((selected) =>
+        selected === id ? remaining[0]?.id ?? null : selected
+      );
+
+      return remaining;
+    });
+
+    if (editingPageId === id) setEditingPageId(null);
+    if (filterPageId === id) setFilterPageId(null);
+  }
+
+  const editingPage =
+    pages.find((page) => page.id === editingPageId) ?? null;
+
+  const filterPage =
+    pages.find((page) => page.id === filterPageId) ?? null;
 
   return (
     <main className="app">
-      <h1>Belge Tarayıcı</h1>
-      <p>Görsel yükle, belgeni kırp, sayfaları sırala ve PDF indir.</p>
+      <header className="app-header">
+        <div className="brand">
+          <span className="brand-icon">▤</span>
+          <div>
+            <h1>Belge Tara</h1>
+            <p>Belgelerini tara, düzenle ve PDF yap.</p>
+          </div>
+        </div>
 
-      <label className="upload">
-        Görsel seç
+        <span className="page-count">
+          {pages.length} sayfa
+        </span>
+      </header>
+
+      <section className="toolbar">
+        <button
+          className="primary-button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={busy}
+        >
+          {busy ? "Fotoğraflar ekleniyor..." : "+ Belge ekle"}
+        </button>
+
         <input
+          ref={fileInputRef}
+          className="hidden-input"
           type="file"
           accept="image/*"
           multiple
           onChange={handleFiles}
         />
-      </label>
 
-      {error && <p role="alert">{error}</p>}
-
-      <section className="page-list">
-        {pages.map((page, index) => (
-          <article className="page-card" key={page.id}>
-            <img
-              src={page.canvas.toDataURL("image/jpeg", 0.9)}
-              alt={`${index + 1}. sayfa`}
-            />
-
-            <p>{index + 1}. sayfa — {page.name}</p>
-
-            <div className="page-actions">
-              <button
-                type="button"
-                onClick={() => setSelectedPageId(page.id)}
-              >
-                Kırp / düzenle
-              </button>
-
-              <button
-                type="button"
-                onClick={() => movePage(index, -1)}
-                disabled={index === 0}
-              >
-                ↑
-              </button>
-
-              <button
-                type="button"
-                onClick={() => movePage(index, 1)}
-                disabled={index === pages.length - 1}
-              >
-                ↓
-              </button>
-
-              <button
-                type="button"
-                onClick={() => removePage(page.id)}
-              >
-                Sil
-              </button>
-            </div>
-          </article>
-        ))}
+        <p className="toolbar-hint">
+          Telefonundan fotoğraf seçebilir veya galerinden birden fazla
+          belge ekleyebilirsin.
+        </p>
       </section>
 
-      {selectedPage && (
-        <CropEditor
-          key={selectedPage.id}
-          imageCanvas={selectedPage.canvas}
-          onCropped={handleCropped}
-          onCancel={() => setSelectedPageId(null)}
-        />
+      {message && (
+        <div className="status-message" role="status">
+          {message}
+          <button
+            className="message-close"
+            onClick={() => setMessage("")}
+            aria-label="Mesajı kapat"
+          >
+            ×
+          </button>
+        </div>
       )}
 
-      <PdfExportPanel pages={pages} />
+      {pages.length === 0 ? (
+        <section className="empty-state">
+          <div className="empty-icon">📄</div>
+          <h2>İlk belgeni ekle</h2>
+          <p>
+            Fotoğraf seçerek belge taramaya başlayabilirsin.
+            Ardından köşeleri ayarlayıp filtre uygulayabilirsin.
+          </p>
+          <button
+            className="primary-button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy}
+          >
+            Fotoğraf seç
+          </button>
+        </section>
+      ) : (
+        <div className="workspace">
+          <section className="editor-panel">
+            <div className="section-heading">
+              <div>
+                <h2>Belge düzenleyici</h2>
+                <p>
+                  {selectedPage
+                    ? selectedPage.name || "Seçili belge"
+                    : "Soldan bir sayfa seç"}
+                </p>
+              </div>
+            </div>
+
+            {selectedPage ? (
+              <>
+                <div className="preview-area">
+                  <img
+                    className="document-preview"
+                    src={selectedPage.canvas.toDataURL("image/jpeg", 0.9)}
+                    alt="Seçili belge önizlemesi"
+                  />
+                </div>
+
+                <div className="action-buttons">
+                  <button
+                    className="secondary-button"
+                    onClick={() => setEditingPageId(selectedPage.id)}
+                  >
+                    ✂ Köşeleri düzelt / kırp
+                  </button>
+
+                  <button
+                    className="secondary-button"
+                    onClick={() => setFilterPageId(selectedPage.id)}
+                  >
+                    ◐ Filtreler
+                  </button>
+                </div>
+
+                <p className="current-filter">
+                  Aktif filtre: <strong>{selectedPage.filter}</strong>
+                </p>
+              </>
+            ) : (
+              <p>Devam etmek için bir sayfa seç.</p>
+            )}
+          </section>
+
+          <aside className="sidebar">
+            <PageManager
+              pages={pages}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              onDelete={deletePage}
+              onReorder={setPages}
+            />
+
+            <PdfExportPanel pages={pages} />
+          </aside>
+        </div>
+      )}
+
+      {editingPage && (
+        <div className="modal-backdrop">
+          <section
+            className="modal-content crop-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Belge kırpma"
+          >
+            <CropEditor
+              key={editingPage.id}
+              image={editingPage.canvas}
+              onCrop={handleCrop}
+              onCancel={() => setEditingPageId(null)}
+            />
+          </section>
+        </div>
+      )}
+
+      {filterPage && (
+        <div className="modal-backdrop">
+          <section
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Belge filtreleri"
+          >
+            <button
+              className="modal-close"
+              onClick={() => setFilterPageId(null)}
+              aria-label="Filtre penceresini kapat"
+            >
+              ×
+            </button>
+
+            <FilterPanel
+              key={filterPage.id}
+              image={filterPage.canvas}
+              onApply={(_preview, mode) => {
+                updatePage(filterPage.id, { filter: mode });
+                setFilterPageId(null);
+                setMessage("Filtre seçildi.");
+              }}
+            />
+          </section>
+        </div>
+      )}
+
+      <footer className="app-footer">
+        Belge Tara · Fotoğraflarını düzenle ve PDF olarak kaydet.
+      </footer>
     </main>
   );
 }
