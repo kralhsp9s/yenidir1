@@ -1,0 +1,107 @@
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f4f6fa;
+  color: #172033;
+  font-family: Arial, sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #1769e0;
+  color: white;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.app {
+  width: min(900px, 100%);
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.upload {
+  display: inline-block;
+  margin: 16px 0;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #1769e0;
+  color: white;
+  cursor: pointer;
+}
+
+.upload input {
+  display: block;
+  width: 100%;
+  max-width: 260px;
+  margin-top: 8px;
+}
+
+.page-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.page-card,
+.pdf-panel {
+  padding: 14px;
+  border: 1px solid #d8dee8;
+  border-radius: 12px;
+  background: white;
+  overflow-wrap: anywhere;
+}
+
+.page-card img {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  background: #e8ebf0;
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pdf-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.pdf-panel input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #aab4c3;
+  border-radius: 8px;
+}
+
+@media (max-width: 480px) {
+  .app {
+    padding: 16px 12px 32px;
+  }
+
+  .page-actions button {
+    flex: 1;
+  }
+}
