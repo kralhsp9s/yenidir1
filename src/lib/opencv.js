@@ -2,68 +2,67 @@
 let loadingPromise;
 
 export function loadOpenCV() {
-  if (window.cv?.Mat && window.cv?.getPerspectiveTransform) {
+  if (window.cv?.Mat) {
     return Promise.resolve(window.cv);
   }
 
-  if (loadingPromise) return loadingPromise;
+  if (loadingPromise) {
+    return loadingPromise;
+  }
 
   loadingPromise = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      loadingPromise = null;
-      reject(new Error("OpenCV yüklenemedi. İnternet bağlantını kontrol et."));
-    }, 30000);
+    const existing = document.querySelector("#opencv-script");
 
-    function checkReady() {
-      if (window.cv?.Mat && window.cv?.getPerspectiveTransform) {
-        clearTimeout(timeout);
-        resolve(window.cv);
-        return true;
-      }
-      return false;
-    }
-
-    const existing = document.querySelector('script[data-opencv="true"]');
-
-    if (existing) {
-      const started = Date.now();
-      const poll = setInterval(() => {
-        if (checkReady()) clearInterval(poll);
-        else if (Date.now() - started > 30000) {
-          clearInterval(poll);
-          clearTimeout(timeout);
-          loadingPromise = null;
-          reject(new Error("OpenCV başlatılamadı."));
-        }
-      }, 100);
-      return;
-    }
-
-    const script = document.createElement("script");
+    const script = existing || document.createElement("script");
+    script.id = "opencv-script";
     script.src = "https://docs.opencv.org/4.x/opencv.js";
     script.async = true;
-    script.dataset.opencv = "true";
 
-    script.onload = () => {
-      const started = Date.now();
-      const poll = setInterval(() => {
-        if (checkReady()) clearInterval(poll);
-        else if (Date.now() - started > 30000) {
-          clearInterval(poll);
-          clearTimeout(timeout);
-          loadingPromise = null;
-          reject(new Error("OpenCV başlatılamadı."));
-        }
-      }, 100);
+    let settled = false;
+
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+
+      if (error) {
+        loadingPromise = null;
+        reject(error);
+      } else {
+        resolve(window.cv);
+      }
     };
 
     script.onerror = () => {
-      clearTimeout(timeout);
-      loadingPromise = null;
-      reject(new Error("OpenCV dosyası indirilemedi."));
+      finish(new Error("OpenCV yüklenemedi. İnternet bağlantını kontrol et."));
     };
 
-    document.head.appendChild(script);
+    script.onload = () => {
+      const startedAt = Date.now();
+
+      const waitForRuntime = () => {
+        const cv = window.cv;
+
+        if (cv?.Mat && cv?.getPerspectiveTransform) {
+          finish();
+          return;
+        }
+
+        if (Date.now() - startedAt > 30000) {
+          finish(new Error("OpenCV başlatılamadı."));
+          return;
+        }
+
+        setTimeout(waitForRuntime, 100);
+      };
+
+      waitForRuntime();
+    };
+
+    if (!existing) {
+      document.head.appendChild(script);
+    } else if (window.cv?.Mat) {
+      finish();
+    }
   });
 
   return loadingPromise;
