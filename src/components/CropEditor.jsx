@@ -1,229 +1,234 @@
 
 import { useEffect, useRef, useState } from "react";
-import { detectDocumentCorners } from "../lib/documentDetection";
-import { cropPerspective } from "../lib/perspectiveCrop";
+import { detectDocument } from "../lib/documentDetection";
+import { perspectiveCrop } from "../lib/perspectiveCrop";
 
-export default function CropEditor({ imageCanvas, onCropped, onCancel }) {
+export default function CropEditor({
+  image,
+  onCrop,
+  onCancel,
+}) {
   const canvasRef = useRef(null);
   const [corners, setCorners] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
-  const [message, setMessage] = useState("Belge aranıyor...");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const dragging = useRef(-1);
+  const [activeCorner, setActiveCorner] = useState(-1);
 
   useEffect(() => {
-    if (!imageCanvas) return;
-
     let cancelled = false;
-    const view = canvasRef.current;
-    const ctx = view.getContext("2d");
 
-    view.width = imageCanvas.width;
-    view.height = imageCanvas.height;
-    ctx.drawImage(imageCanvas, 0, 0);
-
-    async function detect() {
+    async function initialize() {
       setLoading(true);
       setError("");
 
       try {
-        const result = await detectDocumentCorners(imageCanvas);
+        const detected = await detectDocument(image);
 
         if (cancelled) return;
 
-        if (result.found) {
-          setCorners(result.corners);
-          setMessage(result.message);
-        } else {
-          // Algılama başarısızsa düzenlenebilir başlangıç köşeleri.
-          const w = imageCanvas.width;
-          const h = imageCanvas.height;
-          const insetX = w * 0.06;
-          const insetY = h * 0.06;
-
-          setCorners([
-            { x: insetX, y: insetY },
-            { x: w - insetX, y: insetY },
-            { x: w - insetX, y: h - insetY },
-            { x: insetX, y: h - insetY },
-          ]);
-          setMessage(result.message);
-        }
+        setCorners(
+          detected || [
+            { x: image.width * 0.05, y: image.height * 0.05 },
+            { x: image.width * 0.95, y: image.height * 0.05 },
+            { x: image.width * 0.95, y: image.height * 0.95 },
+            { x: image.width * 0.05, y: image.height * 0.95 },
+          ]
+        );
       } catch (err) {
         if (cancelled) return;
 
-        const w = imageCanvas.width;
-        const h = imageCanvas.height;
+        setError(
+          "Otomatik köşe algılanamadı. Köşeleri elle ayarlayabilirsin."
+        );
 
         setCorners([
-          { x: w * 0.06, y: h * 0.06 },
-          { x: w * 0.94, y: h * 0.06 },
-          { x: w * 0.94, y: h * 0.94 },
-          { x: w * 0.06, y: h * 0.94 },
+          { x: image.width * 0.05, y: image.height * 0.05 },
+          { x: image.width * 0.95, y: image.height * 0.05 },
+          { x: image.width * 0.95, y: image.height * 0.95 },
+          { x: image.width * 0.05, y: image.height * 0.95 },
         ]);
-
-        setMessage("Otomatik algılama kullanılamadı; köşeleri elle ayarla.");
-        setError(err.message || "OpenCV yüklenemedi.");
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    detect();
+    initialize();
 
     return () => {
       cancelled = true;
     };
-  }, [imageCanvas]);
+  }, [image]);
 
   useEffect(() => {
-    if (!corners || !canvasRef.current || !imageCanvas) return;
-
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(imageCanvas, 0, 0);
+    if (!canvas || !corners || !image) return;
+
+    const ctx = canvas.getContext("2d");
+    const displayWidth = canvas.clientWidth;
+    const displayHeight =
+      displayWidth * (image.height / image.width);
+
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    canvas.width = Math.round(displayWidth * pixelRatio);
+    canvas.height = Math.round(displayHeight * pixelRatio);
+    canvas.style.height = `${displayHeight}px`;
+
+    ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    ctx.clearRect(0, 0, displayWidth, displayHeight);
+    ctx.drawImage(image, 0, 0, displayWidth, displayHeight);
+
+    const sx = displayWidth / image.width;
+    const sy = displayHeight / image.height;
 
     ctx.beginPath();
+
     corners.forEach((point, index) => {
-      if (index === 0) ctx.moveTo(point.x, point.y);
-      else ctx.lineTo(point.x, point.y);
+      const x = point.x * sx;
+      const y = point.y * sy;
+
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     });
+
     ctx.closePath();
-
-    ctx.fillStyle = "rgba(20, 120, 255, 0.16)";
+    ctx.fillStyle = "rgba(37, 99, 235, 0.16)";
     ctx.fill();
-
-    ctx.strokeStyle = "#1683ff";
-    ctx.lineWidth = Math.max(3, canvas.width / 500);
+    ctx.strokeStyle = "#2563eb";
+    ctx.lineWidth = 3;
     ctx.stroke();
 
     corners.forEach((point) => {
       ctx.beginPath();
-      ctx.arc(
-        point.x,
-        point.y,
-        Math.max(12, canvas.width / 70),
-        0,
-        Math.PI * 2
-      );
+      ctx.arc(point.x * sx, point.y * sy, 8, 0, Math.PI * 2);
       ctx.fillStyle = "#ffffff";
       ctx.fill();
-      ctx.lineWidth = Math.max(3, canvas.width / 500);
-      ctx.strokeStyle = "#1683ff";
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#2563eb";
       ctx.stroke();
     });
-  }, [corners, imageCanvas]);
+  }, [image, corners]);
 
-  function getPosition(event) {
-    const rect = canvasRef.current.getBoundingClientRect();
+  function getPoint(event) {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
 
     return {
-      x: (event.clientX - rect.left) *
-        (canvasRef.current.width / rect.width),
-      y: (event.clientY - rect.top) *
-        (canvasRef.current.height / rect.height),
+      x: ((event.clientX - rect.left) / rect.width) * image.width,
+      y: ((event.clientY - rect.top) / rect.height) * image.height,
     };
   }
 
   function handlePointerDown(event) {
-    if (!corners) return;
+    if (!corners || loading || busy) return;
 
-    const position = getPosition(event);
-    const hitRadius = Math.max(30, canvasRef.current.width / 25);
+    const point = getPoint(event);
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+
+    const hitRadius = Math.max(
+      18,
+      (24 / rect.width) * image.width
+    );
 
     const index = corners.findIndex(
-      (point) => Math.hypot(
-        point.x - position.x,
-        point.y - position.y
-      ) < hitRadius
+      (corner) =>
+        Math.hypot(corner.x - point.x, corner.y - point.y) < hitRadius
     );
 
     if (index !== -1) {
-      dragging.current = index;
-      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+      canvas.setPointerCapture(event.pointerId);
+      setActiveCorner(index);
     }
   }
 
   function handlePointerMove(event) {
-    if (dragging.current === -1) return;
+    if (activeCorner === -1 || !corners) return;
 
-    const position = getPosition(event);
-    const index = dragging.current;
+    const point = getPoint(event);
 
-    setCorners((previous) =>
-      previous.map((point, i) =>
-        i === index
-          ? {
-              x: Math.max(0, Math.min(imageCanvas.width, position.x)),
-              y: Math.max(0, Math.min(imageCanvas.height, position.y)),
-            }
-          : point
-      )
+    const updated = corners.map((corner, index) =>
+      index === activeCorner
+        ? {
+            x: Math.max(0, Math.min(image.width, point.x)),
+            y: Math.max(0, Math.min(image.height, point.y)),
+          }
+        : corner
     );
+
+    setCorners(updated);
   }
 
   function handlePointerUp() {
-    dragging.current = -1;
+    setActiveCorner(-1);
   }
 
   async function handleCrop() {
+    if (!corners || busy) return;
+
+    setBusy(true);
     setError("");
 
-    if (!corners) {
-      setError("Köşeler henüz hazır değil.");
-      return;
-    }
-
-    setProcessing(true);
-
     try {
-      const cropped = await cropPerspective(imageCanvas, corners);
-      onCropped(cropped);
+      const result = await perspectiveCrop(image, corners);
+      onCrop(result);
     } catch (err) {
-      setError(err.message || "Kırpma işlemi başarısız.");
+      console.error(err);
+      setError(err.message || "Belge kırpılamadı.");
     } finally {
-      setProcessing(false);
+      setBusy(false);
     }
+  }
+
+  if (!image) {
+    return <p>Görüntü bulunamadı.</p>;
   }
 
   return (
     <section className="crop-editor">
-      <h2>Belgeyi kırp</h2>
-      <p>{message}</p>
+      <h2>Belge köşelerini ayarla</h2>
 
-      <div className="crop-canvas-wrap">
-        <canvas
-          ref={canvasRef}
-          className="crop-canvas"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-        />
-      </div>
+      {error && <p role="alert">{error}</p>}
 
-      {loading && <p>Belge köşeleri aranıyor...</p>}
-      {error && <p className="crop-error" role="alert">{error}</p>}
+      {loading ? (
+        <p>Belge köşeleri algılanıyor...</p>
+      ) : (
+        <>
+          <p>
+            Mavi noktaları sürükleyerek belgenin dört köşesine yerleştir.
+          </p>
 
-      <div className="crop-actions">
-        <button
-          type="button"
-          onClick={handleCrop}
-          disabled={loading || processing || !corners}
-        >
-          {processing ? "Kırpılıyor..." : "Belgeyi kırp"}
-        </button>
+          <canvas
+            ref={canvasRef}
+            className="crop-canvas"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+          />
 
-        {onCancel && (
-          <button type="button" onClick={onCancel}>
-            Vazgeç
-          </button>
-        )}
-      </div>
+          <div className="crop-actions">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={busy}
+            >
+              İptal
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCrop}
+              disabled={busy || !corners}
+            >
+              {busy ? "Düzeltiliyor..." : "Belgeyi düzleştir"}
+            </button>
+          </div>
+        </>
+      )}
     </section>
   );
 }
-
