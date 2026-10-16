@@ -1,5 +1,5 @@
 
-import { loadOpenCV } from "./opencv";
+import { loadOpenCV } from "./opencv.js";
 
 export async function applyDocumentFilter(
   sourceCanvas,
