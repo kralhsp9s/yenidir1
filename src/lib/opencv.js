@@ -1,18 +1,15 @@
 let loadingPromise;
 
-/**
- * Load OpenCV once and wait for its WASM runtime. Start polling immediately,
- * not only from script.onload: when a script tag already exists, load may
- * have fired before this module attached its listener, leaving the UI stuck.
- */
 export function loadOpenCV(timeoutMs = 20000) {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("OpenCV yalnızca tarayıcıda çalışır."));
   }
 
+  // OpenCV ve WASM tam olarak hazır mı?
   if (window.cv?.Mat && window.cv?.getPerspectiveTransform) {
     return Promise.resolve(window.cv);
   }
+
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = new Promise((resolve, reject) => {
@@ -48,22 +45,21 @@ export function loadOpenCV(timeoutMs = 20000) {
       script.id = "opencv-script";
       script.src = "https://docs.opencv.org/4.x/opencv.js";
       script.async = true;
+      document.head.appendChild(script);
     }
 
     script.addEventListener("error", onError, { once: true });
 
-    // Poll even if the script tag already existed and its load event has passed.
+    // WASM runtime hazır olana kadar kontrol et
     pollId = setInterval(() => {
-      const cv = window.cv;
-      if (cv?.Mat && cv?.getPerspectiveTransform) finish(null, cv);
+      if (window.cv && window.cv.Mat && typeof window.cv.Mat === "function") {
+        finish(null, window.cv);
+      }
     }, 100);
 
     timeoutId = setTimeout(() => finish(new Error(
       "OpenCV başlatılamadı (zaman aşımı). Manuel köşe ayarını kullanabilir veya sayfayı yenileyebilirsin."
     )), timeoutMs);
-
-    if (!script.isConnected) document.head.appendChild(script);
-  });
+  })
 
   return loadingPromise;
-}
