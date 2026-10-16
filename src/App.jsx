@@ -1,9 +1,10 @@
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import CropEditor from "./components/CropEditor";
 import FilterPanel from "./components/FilterPanel";
 import PageManager from "./components/PageManager";
 import PdfExportPanel from "./components/PdfExportPanel";
+import CanvasImage from "./components/CanvasImage";
 import "./index.css";
 
 function createId() {
@@ -44,6 +45,10 @@ function fileToCanvas(file) {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem("belge-tara-theme") || "light"; }
+    catch { return "light"; }
+  });
   const [pages, setPages] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [editingPageId, setEditingPageId] = useState(null);
@@ -51,6 +56,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("belge-tara-theme", theme); } catch {}
+  }, [theme]);
 
   const selectedPage =
     pages.find((page) => page.id === selectedId) ?? null;
@@ -148,9 +158,18 @@ export default function App() {
           </div>
         </div>
 
-        <span className="page-count">
-          {pages.length} sayfa
-        </span>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={() => setTheme((current) => current === "light" ? "dark" : "light")}
+            aria-label={theme === "light" ? "Karanlık temaya geç" : "Aydınlık temaya geç"}
+            title={theme === "light" ? "Karanlık tema" : "Aydınlık tema"}
+          >
+            {theme === "light" ? "🌙 Karanlık" : "☀️ Aydınlık"}
+          </button>
+          <span className="page-count">{pages.length} sayfa</span>
+        </div>
       </header>
 
       <section className="toolbar">
@@ -223,9 +242,10 @@ export default function App() {
             {selectedPage ? (
               <>
                 <div className="preview-area">
-                  <img
+                  <CanvasImage
+                    canvas={selectedPage.canvas}
+                    quality={0.82}
                     className="document-preview"
-                    src={selectedPage.canvas.toDataURL("image/jpeg", 0.9)}
                     alt="Seçili belge önizlemesi"
                   />
                 </div>
