@@ -26,6 +26,12 @@ export async function perspectiveCrop(sourceCanvas, corners) {
     throw new Error("Belge boyutları geçersiz.");
   }
 
+  // Aşırı büyük fotoğraflarda warpPerspective çok fazla bellek tüketebilir.
+  const maxOutputDimension = 2400;
+  const outputScale = Math.min(1, maxOutputDimension / Math.max(outputWidth, outputHeight));
+  const safeWidth = Math.max(2, Math.round(outputWidth * outputScale));
+  const safeHeight = Math.max(2, Math.round(outputHeight * outputScale));
+
   const src = cv.imread(sourceCanvas);
   const srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
     tl.x, tl.y,
@@ -36,9 +42,9 @@ export async function perspectiveCrop(sourceCanvas, corners) {
 
   const dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
     0, 0,
-    outputWidth - 1, 0,
-    outputWidth - 1, outputHeight - 1,
-    0, outputHeight - 1,
+    safeWidth - 1, 0,
+    safeWidth - 1, safeHeight - 1,
+    0, safeHeight - 1,
   ]);
 
   const transform = cv.getPerspectiveTransform(srcPoints, dstPoints);
@@ -49,7 +55,7 @@ export async function perspectiveCrop(sourceCanvas, corners) {
       src,
       result,
       transform,
-      new cv.Size(outputWidth, outputHeight),
+      new cv.Size(safeWidth, safeHeight),
       cv.INTER_CUBIC,
       cv.BORDER_CONSTANT,
       new cv.Scalar(255, 255, 255, 255)

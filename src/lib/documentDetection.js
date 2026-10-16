@@ -24,7 +24,7 @@ async function runDetection(image, options = {}) {
   }
 
   // Büyük fotoğrafları analizden önce küçült.
-  const maxDimension = options.maxDimension || 900;
+  const maxDimension = options.maxDimension || 700;
   const scale = Math.min(1, maxDimension / Math.max(width, height));
   const smallWidth = Math.max(1, Math.round(width * scale));
   const smallHeight = Math.max(1, Math.round(height * scale));
@@ -53,7 +53,7 @@ async function runDetection(image, options = {}) {
       edges,
       contours,
       hierarchy,
-      cv.RETR_LIST,
+      cv.RETR_EXTERNAL,
       cv.CHAIN_APPROX_SIMPLE
     );
 
