@@ -1,4 +1,6 @@
 
+import CanvasImage from "./CanvasImage";
+
 export default function PageManager({
   pages = [],
   selectedId,
@@ -36,9 +38,10 @@ export default function PageManager({
                 className="page-select"
                 onClick={() => onSelect(page.id)}
               >
-                <img
+                <CanvasImage
+                  canvas={page.canvas}
+                  quality={0.65}
                   className="page-thumbnail"
-                  src={page.canvas.toDataURL("image/jpeg", 0.7)}
                   alt=""
                 />
                 <span className="page-name">

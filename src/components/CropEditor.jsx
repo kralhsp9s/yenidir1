@@ -66,11 +66,11 @@ export default function CropEditor({
     if (!canvas || !corners || !image) return;
 
     const ctx = canvas.getContext("2d");
-    const displayWidth = canvas.clientWidth;
-    const displayHeight =
-      displayWidth * (image.height / image.width);
+    const displayWidth = Math.min(canvas.clientWidth || 700, 900);
+    const displayHeight = displayWidth * (image.height / image.width);
 
-    const pixelRatio = window.devicePixelRatio || 1;
+    // Çok yüksek DPI değerleri mobil cihazlarda gereksiz piksel üretir.
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
 
     canvas.width = Math.round(displayWidth * pixelRatio);
     canvas.height = Math.round(displayHeight * pixelRatio);
@@ -173,6 +173,8 @@ export default function CropEditor({
     setError("");
 
     try {
+      // Tarayıcıya yükleme durumunu çizmesi için bir kare süre ver.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
       const result = await perspectiveCrop(image, corners);
       onCrop(result);
     } catch (err) {
