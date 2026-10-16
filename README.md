@@ -1,1 +1,2 @@
-# yenidir1
+# Kurulum
+node server.js
