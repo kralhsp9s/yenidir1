@@ -1,4 +1,3 @@
-
 import { loadOpenCV } from "./opencv.js";
 
 export async function applyDocumentFilter(
@@ -10,8 +9,6 @@ export async function applyDocumentFilter(
     throw new Error("Filtre uygulanacak görüntü bulunamadı.");
   }
 
-  // The original image needs no OpenCV; let this button respond immediately,
-  // even if the external OpenCV/WASM library is unavailable.
   const maxDimension = options.maxDimension ?? Infinity;
   const scale = Math.min(
     1,
@@ -25,7 +22,8 @@ export async function applyDocumentFilter(
   inputCanvas.width = width;
   inputCanvas.height = height;
 
-  inputCanvas.getContext("2d").drawImage(sourceCanvas, 0, 0, width, height);
+  const ctx = inputCanvas.getContext("2d");
+  ctx.drawImage(sourceCanvas, 0, 0, width, height);
 
   if (mode === "original") {
     return inputCanvas;
@@ -70,34 +68,9 @@ export async function applyDocumentFilter(
 
       try {
         clahe.apply(gray, enhanced);
-
-        const channels = new cv.MatVector();
-        const rgba = new cv.Mat();
-
-        try {
-          cv.cvtColor(src, rgba, cv.COLOR_RGBA2RGB);
-          cv.split(rgba, channels);
-
-          // Aydınlık bileşenini iyileştirilmiş gri görüntüyle değiştir.
-          const merged = new cv.MatVector();
-          const b = channels.get(0);
-          const g = channels.get(1);
-          const r = channels.get(2);
-
-          try {
-            // Renkleri koruyarak kontrastı artır.
-            cv.addWeighted(gray, 0.35, enhanced, 0.65, 0, output);
-            cv.cvtColor(output, output, cv.COLOR_GRAY2RGBA);
-          } finally {
-            b.delete();
-            g.delete();
-            r.delete();
-            merged.delete();
-          }
-        } finally {
-          channels.delete();
-          rgba.delete();
-        }
+        // Renkleri koruyarak kontrastı artır
+        cv.addWeighted(gray, 0.35, enhanced, 0.65, 0, output);
+        cv.cvtColor(output, output, cv.COLOR_GRAY2RGBA);
       } finally {
         enhanced.delete();
         clahe.delete();
@@ -115,4 +88,3 @@ export async function applyDocumentFilter(
     output.delete();
     gray.delete();
   }
-}
