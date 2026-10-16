@@ -10,8 +10,8 @@ export async function applyDocumentFilter(
     throw new Error("Filtre uygulanacak görüntü bulunamadı.");
   }
 
-  const cv = await loadOpenCV();
-
+  // The original image needs no OpenCV; let this button respond immediately,
+  // even if the external OpenCV/WASM library is unavailable.
   const maxDimension = options.maxDimension ?? Infinity;
   const scale = Math.min(
     1,
@@ -31,6 +31,7 @@ export async function applyDocumentFilter(
     return inputCanvas;
   }
 
+  const cv = await loadOpenCV();
   const src = cv.imread(inputCanvas);
   const output = new cv.Mat();
   const gray = new cv.Mat();
