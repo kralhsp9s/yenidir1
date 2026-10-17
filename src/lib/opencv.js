@@ -1,10 +1,5 @@
 let loadingPromise;
 
-/**
- * Load OpenCV once and wait for its WASM runtime. Start polling immediately,
- * not only from script.onload: when a script tag already exists, load may
- * have fired before this module attached its listener, leaving the UI stuck.
- */
 export function loadOpenCV(timeoutMs = 20000) {
   if (typeof window === "undefined") {
     return Promise.reject(new Error("OpenCV yalnızca tarayıcıda çalışır."));
@@ -34,24 +29,35 @@ export function loadOpenCV(timeoutMs = 20000) {
       cleanup();
       if (error) {
         loadingPromise = null;
+        console.error("OpenCV load failed", error);
         reject(error);
       } else {
         resolve(cv);
       }
     };
 
-    const onError = () =>
-      finish(
-        new Error(
-          "OpenCV yüklenemedi. İnternet bağlantısını kontrol edip sayfayı yenile."
-        )
-      );
+    const onError = () => finish(new Error("OpenCV yüklenemedi. Ağ bağlantısını kontrol edip sayfayı yenile."));
 
     if (!script) {
       script = document.createElement("script");
       script.id = "opencv-script";
-      script.src = "https://docs.opencv.org/4.x/opencv.js";
       script.async = true;
+
+      const localPath = "/opencv.js";
+      let src = localPath;
+
+      try {
+        const res = fetch(localPath, { method: "HEAD" });
+        res.then((r) => {
+          if (!r.ok) src = "https://docs.opencv.org/4.x/opencv.js";
+        }).catch(() => {
+          src = "https://docs.opencv.org/4.x/opencv.js";
+        });
+      } catch {
+        src = "https://docs.opencv.org/4.x/opencv.js";
+      }
+
+      script.src = src;
       document.head.appendChild(script);
     }
 
@@ -65,9 +71,8 @@ export function loadOpenCV(timeoutMs = 20000) {
 
     timeoutId = setTimeout(() => {
       finish(
-        new Error(
-          "OpenCV başlatılamadı (zaman aşımı). Manuel köşe ayarını kullanabilir veya sayfayı yenileyebilirsin."
-        )
+        new Error("OpenCV başlatılamadı (zaman aşımı). Manuel köşe ayarını kullanabilir veya sayfayı yenileyebilirsin."),
+        null
       );
     }, timeoutMs);
   });
