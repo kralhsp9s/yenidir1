@@ -10,7 +10,13 @@ function loadOpenCV(timeoutMs = 20000) {
 
   initPromise = new Promise((resolve, reject) => {
     try {
-      importScripts('https://docs.opencv.org/4.x/opencv.js');
+      // Prefer local copy to avoid CDN/network/CORS problems in production.
+      try {
+        importScripts('/opencv.js');
+      } catch (e) {
+        // Fallback to CDN if local file not present
+        importScripts('https://docs.opencv.org/4.x/opencv.js');
+      }
     } catch (e) {
       reject(e);
       return;
@@ -34,17 +40,22 @@ function loadOpenCV(timeoutMs = 20000) {
   return initPromise;
 }
 
-// Helper: read ImageBitmap into cv.Mat via ImageData
+// Helper: render ImageBitmap into OffscreenCanvas and get ImageData -> mat
 function imageBitmapToMat(bitmap) {
   const w = bitmap.width;
   const h = bitmap.height;
-  const off = new OffscreenCanvas(w, h);
-  const ctx = off.getContext('2d');
-  ctx.drawImage(bitmap, 0, 0, w, h);
-  const imageData = ctx.getImageData(0, 0, w, h);
-  // convert ImageData to Mat
-  const mat = cv.matFromImageData(imageData);
-  return { mat, off };
+  const off = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : null;
+  const canvas2d = off ? off.getContext('2d') : null;
+
+  if (canvas2d) {
+    canvas2d.drawImage(bitmap, 0, 0, w, h);
+    const imageData = canvas2d.getImageData(0, 0, w, h);
+    const mat = cv.matFromImageData(imageData);
+    return { mat, off };
+  }
+
+  // Fallback: create an in-worker canvas via OffscreenCanvas polyfill is unlikely, so throw
+  throw new Error('OffscreenCanvas desteklenmiyor (worker).');
 }
 
 async function applyFilterWorker(id, payload) {
@@ -53,9 +64,9 @@ async function applyFilterWorker(id, payload) {
   try {
     await loadOpenCV();
 
-    // Prepare mat
     const { mat: src, off } = imageBitmapToMat(imageBitmap);
-    imageBitmap.close?.();
+    // release the bitmap (transferable already moved)
+    try { imageBitmap.close?.(); } catch (e) {}
 
     const output = new cv.Mat();
 
@@ -88,22 +99,19 @@ async function applyFilterWorker(id, payload) {
           clahe.delete();
         }
       } else {
-        // original -> just return the original bitmap
-        // draw src back to canvas
+        // original -> draw src back to offscreen canvas
         cv.imshow(off, src);
         const resultBitmap = off.transferToImageBitmap();
         postMessage({ id, success: true, imageBitmap: resultBitmap }, [resultBitmap]);
         return;
       }
 
-      // show output on offscreen canvas
       cv.imshow(off, output);
       const resultBitmap = off.transferToImageBitmap();
-
       postMessage({ id, success: true, imageBitmap: resultBitmap }, [resultBitmap]);
     } finally {
-      output.delete();
-      src.delete();
+      try { output.delete(); } catch (e) {}
+      try { src.delete(); } catch (e) {}
     }
   } catch (err) {
     postMessage({ id, success: false, error: err.message || String(err) });
@@ -116,11 +124,8 @@ async function perspectiveCropWorker(id, payload) {
   try {
     await loadOpenCV();
 
-    const w = imageBitmap.width;
-    const h = imageBitmap.height;
-
     const { mat: src, off: tmpOff } = imageBitmapToMat(imageBitmap);
-    imageBitmap.close?.();
+    try { imageBitmap.close?.(); } catch (e) {}
 
     try {
       const [tl, tr, br, bl] = corners;
@@ -136,19 +141,8 @@ async function perspectiveCropWorker(id, payload) {
       const safeWidth = Math.max(2, Math.round(outputWidth * outputScale));
       const safeHeight = Math.max(2, Math.round(outputHeight * outputScale));
 
-      const srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        tl.x, tl.y,
-        tr.x, tr.y,
-        br.x, br.y,
-        bl.x, bl.y,
-      ]);
-
-      const dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        0, 0,
-        safeWidth - 1, 0,
-        safeWidth - 1, safeHeight - 1,
-        0, safeHeight - 1,
-      ]);
+      const srcPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [tl.x, tl.y, tr.x, tr.y, br.x, br.y, bl.x, bl.y]);
+      const dstPoints = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, safeWidth - 1, 0, safeWidth - 1, safeHeight - 1, 0, safeHeight - 1]);
 
       const transform = cv.getPerspectiveTransform(srcPoints, dstPoints);
       const result = new cv.Mat();
@@ -156,19 +150,19 @@ async function perspectiveCropWorker(id, payload) {
       try {
         cv.warpPerspective(src, result, transform, new cv.Size(safeWidth, safeHeight), cv.INTER_CUBIC, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
 
-        const outOff = new OffscreenCanvas(safeWidth, safeHeight);
+        const outOff = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(safeWidth, safeHeight) : null;
+        if (!outOff) throw new Error('OffscreenCanvas desteklenmiyor (worker).');
         cv.imshow(outOff, result);
-
         const resultBitmap = outOff.transferToImageBitmap();
         postMessage({ id, success: true, imageBitmap: resultBitmap }, [resultBitmap]);
       } finally {
-        result.delete();
-        transform.delete();
-        dstPoints.delete();
-        srcPoints.delete();
+        try { result.delete(); } catch (e) {}
+        try { transform.delete(); } catch (e) {}
+        try { dstPoints.delete(); } catch (e) {}
+        try { srcPoints.delete(); } catch (e) {}
       }
     } finally {
-      src.delete();
+      try { src.delete(); } catch (e) {}
     }
   } catch (err) {
     postMessage({ id, success: false, error: err.message || String(err) });
