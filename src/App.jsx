@@ -18,21 +18,40 @@ function fileToCanvas(file) {
     const image = new Image();
 
     image.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
+      (async () => {
+        try {
+          // Çok büyük fotoğraflar tarayıcıyı dondurabilir. Maksimum boyutu sınırlıyoruz.
+          const MAX_DIMENSION = 2000; // cihaz belleğine göre bu değeri düşürebilirsin
 
-      const context = canvas.getContext("2d");
+          const naturalWidth = image.naturalWidth || image.width || 1;
+          const naturalHeight = image.naturalHeight || image.height || 1;
 
-      if (!context) {
-        URL.revokeObjectURL(url);
-        reject(new Error("Fotoğraf açılamadı."));
-        return;
-      }
+          const scale = Math.min(1, MAX_DIMENSION / Math.max(naturalWidth, naturalHeight));
 
-      context.drawImage(image, 0, 0);
-      URL.revokeObjectURL(url);
-      resolve(canvas);
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(naturalHeight * scale));
+
+          const context = canvas.getContext("2d");
+
+          if (!context) {
+            URL.revokeObjectURL(url);
+            reject(new Error("Fotoğraf açılamadı."));
+            return;
+          }
+
+          context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+          // Uzun işlem sırasında ana iş parçacığına kısa bir ara vererek UI'nin güncellenmesini sağla.
+          await new Promise((r) => setTimeout(r, 0));
+
+          URL.revokeObjectURL(url);
+          resolve(canvas);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          reject(err);
+        }
+      })();
     };
 
     image.onerror = () => {
@@ -81,6 +100,7 @@ export default function App() {
       const newPages = [];
 
       for (const file of files) {
+        // Her dosya işlenirken kısa bir gecikme vererek UI'nin yanıt vermesini sağla.
         const canvas = await fileToCanvas(file);
 
         newPages.push({
@@ -89,6 +109,9 @@ export default function App() {
           canvas,
           filter: "original",
         });
+
+        // Kısa bir bekleme ile event loop'a kontrol ver.
+        await new Promise((r) => setTimeout(r, 0));
       }
 
       setPages((current) => [...current, ...newPages]);
