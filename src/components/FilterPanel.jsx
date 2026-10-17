@@ -1,6 +1,6 @@
-
 import { useEffect, useRef, useState } from "react";
 import { applyDocumentFilter } from "../lib/documentFilters";
+import { applyFilter as workerApplyFilter } from "../lib/opencvWorkerClient";
 
 const FILTERS = [
   { id: "original", label: "Orijinal" },
@@ -30,16 +30,28 @@ export default function FilterPanel({ image, onApply }) {
       setError("");
 
       try {
-        // Önizleme hızlı olsun diye en fazla 1400 piksel kullan.
-        const canvas = await applyDocumentFilter(image, mode, {
-          maxDimension: 1400,
-        });
+        try {
+          const canvas = await workerApplyFilter(image, mode, {
+            maxDimension: 1400,
+            timeoutMs: 60000,
+          });
 
-        if (!cancelled && currentRequest === requestId.current) {
-          setPreview(canvas);
+          if (!cancelled && currentRequest === requestId.current) {
+            setPreview(canvas);
+          }
+        } catch (workerErr) {
+          console.warn("Worker applyFilter failed, falling back:", workerErr);
+          const canvas = await applyDocumentFilter(image, mode, {
+            maxDimension: 1400,
+          });
+
+          if (!cancelled && currentRequest === requestId.current) {
+            setPreview(canvas);
+          }
         }
       } catch (err) {
         if (!cancelled) {
+          console.error("Filter preview error:", err);
           setError(err.message || "Filtre uygulanamadı.");
         }
       } finally {
@@ -76,6 +88,7 @@ export default function FilterPanel({ image, onApply }) {
             type="button"
             className={mode === filter.id ? "active" : ""}
             onClick={() => {
+              if (busy) return;
               setMode(filter.id);
               setPreview(null);
             }}
